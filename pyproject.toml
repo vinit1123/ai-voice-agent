@@ -8,6 +8,7 @@ dependencies = [
     "edge-tts>=7.2.8",
     "gtts>=2.5.4",
     "langchain-ollama>=1.1.0",
+    "langgraph>=1.2.4",
     "playsound3>=3.3.1",
     "pyaudio>=0.2.14",
     "pygame>=2.6.1",
