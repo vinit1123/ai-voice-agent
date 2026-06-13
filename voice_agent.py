@@ -1,10 +1,26 @@
 import asyncio
-import re
 import speech_recognition as sr
 import edge_tts
 
 from playsound3 import playsound
-from langchain_ollama import ChatOllama
+
+from langchain_ollama import (
+    ChatOllama,
+    OllamaEmbeddings
+)
+
+from langchain_community.document_loaders import (
+    PyPDFLoader
+)
+
+from langchain_text_splitters import (
+    RecursiveCharacterTextSplitter
+)
+
+
+from langchain_community.vectorstores import (
+    FAISS
+)
 
 from typing import TypedDict
 
@@ -22,17 +38,61 @@ llm = ChatOllama(
 )
 
 # ----------------------------------
+# RAG Setup
+# ----------------------------------
+
+loader = PyPDFLoader(
+    "data/sample.pdf"
+)
+
+docs = loader.load()
+
+splitter = (
+    RecursiveCharacterTextSplitter(
+        chunk_size=500,
+        chunk_overlap=200
+    )
+)
+
+chunks = splitter.split_documents(
+    docs
+)
+
+embeddings = OllamaEmbeddings(
+    model="nomic-embed-text"
+)
+
+vectorstore = FAISS.from_documents(
+    chunks,
+    embeddings
+)
+
+retriever = (
+    vectorstore.as_retriever(
+        search_kwargs={"k": 5}
+    )
+)
+
+# ----------------------------------
 # LangGraph State
 # ----------------------------------
 
 class AgentState(TypedDict):
+
     question: str
     route: str
     answer: str
 
 # ----------------------------------
+# Memory
+# ----------------------------------
+
+history = []
+
+# ----------------------------------
 # Supervisor
 # ----------------------------------
+
 def supervisor(state):
 
     q = state["question"].lower()
@@ -48,12 +108,31 @@ def supervisor(state):
             "times",
             "multiply",
             "multiplied by",
-            "divided by"
+            "divided by",
+            "into"
         ]
     ):
 
         return {
             "route": "tool"
+        }
+
+    rag_keywords = [
+        "attention",
+        "transformer",
+        "encoder",
+        "decoder",
+        "multi head",
+        "paper"
+    ]
+
+    if any(
+        word in q
+        for word in rag_keywords
+    ):
+
+        return {
+            "route": "rag"
         }
 
     return {
@@ -82,6 +161,10 @@ Conversation:
 Answer only the latest question.
 """
 
+
+
+
+
     response = llm.invoke(
         prompt
     )
@@ -95,6 +178,7 @@ Answer only the latest question.
     return {
         "answer": answer
     }
+
 # ----------------------------------
 # Tool Agent
 # ----------------------------------
@@ -106,11 +190,17 @@ def tool_agent(state):
         expression = (
             state["question"]
             .lower()
+            .replace("what is", "")
+            .replace("calculate", "")
             .replace("x", "*")
             .replace("times", "*")
-            .replace("multiply", "*")
             .replace("multiplied by", "*")
             .replace("divided by", "/")
+            .strip()
+        )
+
+        print(
+            f"\nExpression: {expression}"
         )
 
         result = eval(
@@ -121,11 +211,72 @@ def tool_agent(state):
             "answer": str(result)
         }
 
-    except:
+    except Exception as e:
+
+        print(
+            f"\nTool Error: {e}"
+        )
 
         return {
             "answer": "Invalid calculation"
         }
+# ----------------------------------
+# RAG Agent
+# ----------------------------------
+
+def rag_agent(state):
+
+    docs = retriever.invoke(
+        state["question"]
+    )
+
+    print("\n===== RETRIEVED DOCS =====\n")
+
+    for i, doc in enumerate(docs):
+
+        print(
+            f"\nChunk {i+1}:\n"
+        )
+
+        print(
+            doc.page_content[:500]
+        )
+
+    context = "\n\n".join(
+        doc.page_content
+        for doc in docs
+    )
+
+    prompt = f"""
+Answer the question using ONLY the context below.
+
+Do not use outside knowledge.
+
+If the answer is not found in the context,
+reply exactly:
+
+I could not find that information in the PDF.
+
+Context:
+
+{context}
+
+Question:
+
+{state["question"]}
+
+Answer:
+"""
+
+    response = llm.invoke(
+        prompt
+    )
+
+    return {
+        "answer": response.content
+    }
+
+
 # ----------------------------------
 # Router
 # ----------------------------------
@@ -137,7 +288,7 @@ def router(state):
 # ----------------------------------
 # Build Graph
 # ----------------------------------
-history = []
+
 graph = StateGraph(
     AgentState
 )
@@ -157,6 +308,11 @@ graph.add_node(
     tool_agent
 )
 
+graph.add_node(
+    "rag_agent",
+    rag_agent
+)
+
 graph.set_entry_point(
     "supervisor"
 )
@@ -166,7 +322,8 @@ graph.add_conditional_edges(
     router,
     {
         "chat": "chat_agent",
-        "tool": "tool_agent"
+        "tool": "tool_agent",
+        "rag": "rag_agent"
     }
 )
 
@@ -177,6 +334,11 @@ graph.add_edge(
 
 graph.add_edge(
     "tool_agent",
+    END
+)
+
+graph.add_edge(
+    "rag_agent",
     END
 )
 
@@ -207,13 +369,13 @@ async def speak_async(text):
         "response.mp3"
     )
 
-
 def speak(text):
 
     asyncio.run(
         speak_async(text)
     )
-    # ----------------------------------
+
+# ----------------------------------
 # Main Loop
 # ----------------------------------
 
@@ -244,10 +406,6 @@ while True:
             f"\nYou: {question}"
         )
 
-        # ----------------------------------
-        # Exit
-        # ----------------------------------
-
         if question.lower() in [
             "exit",
             "quit",
@@ -263,10 +421,6 @@ while True:
             )
 
             break
-
-        # ----------------------------------
-        # LangGraph Invoke
-        # ----------------------------------
 
         result = agent.invoke(
             {
@@ -289,10 +443,6 @@ while True:
         print(
             "\nSpeaking..."
         )
-
-        # ----------------------------------
-        # Speak Response
-        # ----------------------------------
 
         speak(
             answer
