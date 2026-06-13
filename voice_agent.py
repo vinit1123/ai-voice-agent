@@ -1,10 +1,7 @@
 import asyncio
 import speech_recognition as sr
 import edge_tts
-from memory import (
-    save_memory,
-    get_memories
-)
+
 from playsound3 import playsound
 
 from langchain_ollama import (
@@ -145,15 +142,7 @@ def supervisor(state):
 # ----------------------------------
 # Chat Agent
 # ----------------------------------
-memories = get_memories()
 
-print(
-    "\nMEMORIES:"
-)
-
-for m in memories[-5:]:
-
-    print(m)
 def chat_agent(state):
 
     history.append(
@@ -203,9 +192,10 @@ def tool_agent(state):
             .lower()
             .replace("what is", "")
             .replace("calculate", "")
-            .replace("x", "*")
-            .replace("times", "*")
             .replace("multiplied by", "*")
+            .replace("multiply", "*")
+            .replace("times", "*")
+            .replace("x", "*")
             .replace("divided by", "/")
             .strip()
         )
@@ -214,9 +204,7 @@ def tool_agent(state):
             f"\nExpression: {expression}"
         )
 
-        result = eval(
-            expression
-        )
+        result = eval(expression)
 
         return {
             "answer": str(result)
@@ -412,7 +400,7 @@ while True:
         question = recognizer.recognize_google(
             audio
         )
-        save_memory(question)
+
         print(
             f"\nYou: {question}"
         )
