@@ -192,10 +192,9 @@ def tool_agent(state):
             .lower()
             .replace("what is", "")
             .replace("calculate", "")
-            .replace("multiplied by", "*")
-            .replace("multiply", "*")
-            .replace("times", "*")
             .replace("x", "*")
+            .replace("times", "*")
+            .replace("multiplied by", "*")
             .replace("divided by", "/")
             .strip()
         )
@@ -204,7 +203,9 @@ def tool_agent(state):
             f"\nExpression: {expression}"
         )
 
-        result = eval(expression)
+        result = eval(
+            expression
+        )
 
         return {
             "answer": str(result)
