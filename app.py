@@ -1,5 +1,7 @@
 import streamlit as st
 import speech_recognition as sr
+import edge_tts
+import asyncio
 
 from agent_backend import ask_agent
 
@@ -14,6 +16,26 @@ st.set_page_config(
 
 st.title("🤖 AI Voice Agent")
 
+#---------------------
+# Helper function 
+#---------------------
+async def generate_audio(text):
+
+    communicate = edge_tts.Communicate(
+        text,
+        voice="en-US-AriaNeural"
+    )
+
+    await communicate.save(
+        "response.mp3"
+    )
+
+
+def speak(text):
+
+    asyncio.run(
+        generate_audio(text)
+    )
 # ----------------------------------
 # Voice Input
 # ----------------------------------
@@ -60,6 +82,18 @@ if audio:
         st.write(
             f"🤖 {answer}"
         )
+
+        speak(answer)
+
+        with open(
+            "response.mp3",
+            "rb"
+        ) as audio_file:
+
+            st.audio(
+                audio_file.read(),
+                format="audio/mp3"
+            )
 
     except Exception as e:
 
